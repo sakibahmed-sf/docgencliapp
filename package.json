@@ -1,0 +1,45 @@
+{
+  "name": "docgencliapp",
+  "version": "1.0.0",
+  "main": "index.js",
+  "bin": {
+    "docgen": "./build/index.js"
+  },
+  "scripts": {
+    "start": "tsc && webpack && npm run open && node build/server.js && npm run start:mcp_client",
+    "open": "open-cli https://localhost:3000",
+    "serve": "webpack serve",
+    "build": "webpack",
+    "tsc": "tsc",
+    "build:mcp": "tsc && chmod 755 build/mcp_server.js && chmod 755 build/mcp_client.js",
+    "start:mcp_server": "node build/mcp_server.js ",
+    "start:mcp_client": "node build/mcp_client.js build/mcp_server.js",
+    "build:start:mcp_server": "npm run build:mcp && npm run start:mcp_server",
+    "dev": "webpack-dev-server --https --cert ./cert.pem --key ./key.pem"
+  },
+  "type": "module",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.11.2",
+    "express": "^5.1.0",
+    "js-pkce": "^1.4.0",
+    "jwt-decode": "^4.0.0",
+    "node-fetch": "^3.3.2",
+    "open-cli": "^8.0.0",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.27.1",
+    "@babel/preset-env": "^7.27.2",
+    "@types/node": "^22.15.17",
+    "babel-loader": "^10.0.0",
+    "html-webpack-plugin": "^5.6.3",
+    "typescript": "^5.8.3",
+    "webpack": "^5.99.8",
+    "webpack-cli": "^6.0.1",
+    "webpack-dev-server": "^5.2.1"
+  }
+}
