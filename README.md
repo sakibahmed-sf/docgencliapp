@@ -107,10 +107,10 @@ npm run start:server
 
 ```bash
 # Start authentication flow
-docgen-cli start
+docgen start
 
 # Show help
-docgen-cli help
+docgen help
 ```
 
 ### Start the MCP Client
