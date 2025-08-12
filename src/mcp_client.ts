@@ -1,66 +1,233 @@
+/**
+ * MCP Client for DocGen CLI
+ * Provides an interactive CLI interface for communicating with DocGen APIs
+ * through the Model Context Protocol and Ollama for natural language processing
+ */
+
 import fetch from "node-fetch";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import readline from "readline/promises";
 import { fileURLToPath } from "url";
 import { join } from "path";
-import { readFile } from "fs/promises";
 import { jwtDecode } from "jwt-decode";
 
-let token: any = null;
+import { config } from "./config/index.js";
+import { createLogger, Logger } from "./utils/logger.js";
+import { readFileContent, FileSystemError } from "./utils/fileUtils.js";
+import { HttpClient } from "./utils/httpClient.js";
 
-async function getToken() {
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = join(__filename, "..");
+// Initialize logger
+const logger = createLogger(
+  join(fileURLToPath(import.meta.url), "..", "..", "logs"),
+  config.logging.level,
+  config.logging.maxLogSize
+);
 
-  const filePath = join(__dirname, "..", "dist", "callback.json");
-  const res = await readFile(filePath, "utf-8");
-  const json = JSON.parse(res);
-  return json.token;
+// Initialize HTTP client
+const httpClient = new HttpClient(logger);
+
+/**
+ * Interface for JWT token payload
+ */
+interface TokenPayload {
+  exp?: number;
+  iat?: number;
+  sub?: string;
+  [key: string]: any;
 }
 
+/**
+ * Interface for tool definition
+ */
+interface Tool {
+  name: string;
+  description: string;
+  input_schema: any;
+}
+
+/**
+ * Interface for Ollama response
+ */
+interface OllamaResponse {
+  response: string;
+  done: boolean;
+  model?: string;
+}
+
+let token: string | null = null;
+
+/**
+ * Retrieves the authentication token from the callback file
+ * @returns Promise resolving to the JWT token
+ * @throws Error if token cannot be retrieved or is invalid
+ */
+async function getToken(): Promise<string> {
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = join(__filename, "..");
+    const filePath = join(__dirname, "..", "dist", "callback.json");
+
+    logger.debug("Reading token from callback file", { filePath });
+
+    const content = await readFileContent(filePath, {
+      maxSize: config.security.maxFileSize,
+      allowedExtensions: [".json"],
+    });
+
+    const json = JSON.parse(content);
+
+    if (!json.token || typeof json.token !== "string") {
+      throw new Error("Invalid token format in callback file");
+    }
+
+    // Validate token structure (basic JWT validation)
+    const tokenParts = json.token.split(".");
+    if (tokenParts.length !== 3) {
+      throw new Error("Invalid JWT token format");
+    }
+
+    logger.info("Token retrieved successfully");
+    return json.token;
+  } catch (error) {
+    if (error instanceof FileSystemError) {
+      logger.error("Failed to read token file", {
+        error: error.message,
+        code: error.code,
+      });
+      throw new Error(
+        "Authentication token not found. Please run authentication first."
+      );
+    }
+
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error("Error retrieving token", { error: errorMessage });
+    throw new Error(`Failed to retrieve authentication token: ${errorMessage}`);
+  }
+}
+
+/**
+ * Validates if a JWT token is still valid
+ * @param token - JWT token to validate
+ * @returns True if token is valid and not expired
+ */
+function isTokenValid(token: string): boolean {
+  try {
+    const decoded: TokenPayload = jwtDecode(token);
+    const now = Date.now() / 1000;
+
+    // Check if token has expiration and if it's still valid
+    if (decoded.exp && decoded.exp <= now) {
+      logger.warn("Token has expired", {
+        expiry: new Date(decoded.exp * 1000).toISOString(),
+        now: new Date(now * 1000).toISOString(),
+      });
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    logger.error("Token validation failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * Enhanced MCP Client with improved error handling and validation
+ */
 class MCPClient {
   private mcp: Client;
   private transport: StdioClientTransport | null = null;
-  private tools: any = [];
-  private ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434";
-  private ollamaModel = process.env.OLLAMA_MODEL || "qwen2.5";
+  private tools: Tool[] = [];
+  private logger: Logger;
+  private ollamaUrl: string;
+  private ollamaModel: string;
 
   constructor() {
-    this.mcp = new Client({ name: "mcp-client-cli", version: "1.0.0" });
+    this.mcp = new Client({
+      name: "mcp-client-cli",
+      version: "1.0.0",
+    });
+    this.logger = logger;
+    this.ollamaUrl = config.ollama.url;
+    this.ollamaModel = config.ollama.model;
   }
 
-  async connectToServer(serverScriptPath: string) {
+  /**
+   * Connect to MCP server with enhanced error handling
+   * @param serverScriptPath - Path to the server script
+   * @throws Error if connection fails
+   */
+  async connectToServer(serverScriptPath: string): Promise<void> {
     try {
-      const isJs = serverScriptPath.endsWith(".js");
-      if (!isJs) {
+      // Validate server script path
+      if (!serverScriptPath || typeof serverScriptPath !== "string") {
+        throw new Error("Server script path must be a non-empty string");
+      }
+
+      if (!serverScriptPath.endsWith(".js")) {
         throw new Error("Server script must be a .js file");
       }
-      const command = process.execPath;
 
+      this.logger.info("Connecting to MCP server", {
+        serverScript: serverScriptPath,
+      });
+
+      const command = process.execPath;
       this.transport = new StdioClientTransport({
         command,
         args: [serverScriptPath],
       });
-      this.mcp.connect(this.transport);
 
+      await this.mcp.connect(this.transport);
+
+      // Retrieve and validate tools
       const toolsResult = await this.mcp.listTools();
-      this.tools = toolsResult.tools.map((tool) => {
-        return {
-          name: tool.name,
-          description: tool.description,
-          input_schema: tool.inputSchema,
-        };
+      this.tools = toolsResult.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description || "", // Provide default empty string
+        input_schema: tool.inputSchema,
+      }));
+
+      this.logger.info("Successfully connected to MCP server", {
+        toolCount: this.tools.length,
+        tools: this.tools.map((t) => t.name),
       });
-    } catch (e) {
-      console.log("Failed to connect to MCP server: ", e);
-      throw e;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.logger.error("Failed to connect to MCP server", {
+        error: errorMessage,
+      });
+      throw new Error(`MCP server connection failed: ${errorMessage}`);
     }
   }
 
-  getAllToolNames() {
-    const toolNames = this.tools.map((tool: any) => tool.name).join(", ");
-    return toolNames;
+  /**
+   * Get all available tool names as a comma-separated string
+   * @returns Comma-separated list of tool names
+   */
+  getAllToolNames(): string {
+    return this.tools.map((tool) => tool.name).join(", ");
+  }
+
+  /**
+   * Disconnect from MCP server and cleanup resources
+   */
+  async disconnect(): Promise<void> {
+    try {
+      if (this.transport) {
+        await this.transport.close();
+        this.transport = null;
+      }
+      this.logger.info("Disconnected from MCP server");
+    } catch (error) {
+      this.logger.error("Error during disconnect", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   async process(query: string) {
