@@ -137,7 +137,7 @@ function isTokenValid(token: string): boolean {
 /**
  * Enhanced MCP Client with improved error handling and validation
  */
-class MCPClient {
+export class MCPClient {
   private mcp: Client;
   private transport: StdioClientTransport | null = null;
   private tools: Tool[] = [];
@@ -458,4 +458,7 @@ async function main() {
   }
 }
 
-main();
+// Start only if this module is run directly
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main();
+}

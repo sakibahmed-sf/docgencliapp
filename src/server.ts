@@ -219,7 +219,7 @@ app.use((req, res) => {
 /**
  * Start the HTTPS server
  */
-function startServer(): void {
+export function startServer(): void {
   const server = https.createServer(sslOptions, app);
 
   server.listen(config.port, () => {
@@ -254,5 +254,7 @@ function startServer(): void {
   process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 }
 
-// Start the server
-startServer();
+// Start the server only if this module is run directly
+if (import.meta.url === `file://${process.argv[1]}`) {
+  startServer();
+}
