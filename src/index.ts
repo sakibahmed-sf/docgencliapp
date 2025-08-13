@@ -57,6 +57,26 @@ async function startCLI(): Promise<void> {
   }
 }
 
+/**
+ * Start the complete application flow
+ */
+async function startApplication(): Promise<void> {
+  try {
+    logger.info("Starting DocGen CLI application...");
+    logger.info("This will start the authentication server and open your browser.");
+    logger.info("After completing authentication, run 'docgen chat' to start the interactive CLI.");
+    
+    // Start the authentication server (this will handle the full auth flow)
+    await startAuthServer();
+    
+  } catch (error) {
+    logger.error("Failed to start application", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    process.exit(1);
+  }
+}
+
 // Configure CLI commands
 program
   .name("docgen")
@@ -64,6 +84,11 @@ program
     "DocGen CLI - Interact with DocGen APIs through natural language"
   )
   .version("1.0.0");
+
+program
+  .command("start")
+  .description("Start the complete DocGen CLI application flow")
+  .action(startApplication);
 
 program
   .command("auth")

@@ -105,7 +105,12 @@ export class MCPService {
 
       this.logger.info("MCP tool called successfully", { toolName });
 
-      return { success: true, data: result };
+      // Extract the content array from the MCP result to match our MCPCallResult interface
+      const mcpCallResult: MCPCallResult = {
+        content: Array.isArray(result.content) ? result.content : []
+      };
+
+      return { success: true, data: mcpCallResult };
     } catch (error) {
       const appError: AppError = {
         code: "MCP_TOOL_CALL_ERROR",
