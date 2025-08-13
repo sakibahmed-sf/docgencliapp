@@ -106,11 +106,20 @@ npm run start:server
 ### CLI Commands
 
 ```bash
-# Start authentication flow
-docgen-cli start
+# Start the complete application flow (recommended)
+docgen start
+
+# Start authentication server only
+docgen auth
+
+# Start interactive chat interface only
+docgen chat
+
+# Start MCP server only  
+docgen server
 
 # Show help
-docgen-cli help
+docgen --help
 ```
 
 ### Start the MCP Client
